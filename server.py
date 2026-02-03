@@ -99,6 +99,12 @@ FRIENDLI_BASE_URL = os.environ.get("FRIENDLI_BASE_URL", "https://api.friendli.ai
 # Get preferred provider (default to openai)
 PREFERRED_PROVIDER = os.environ.get("PREFERRED_PROVIDER", "openai").lower()
 
+# For Friendli provider, set a dummy OPENAI_API_KEY if not present
+# This prevents litellm from failing validation before using our custom api_key
+if PREFERRED_PROVIDER == "friendli" and not OPENAI_API_KEY:
+    os.environ["OPENAI_API_KEY"] = "sk-dummy-key-for-friendli-provider"
+    OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+
 # Get model mapping configuration from environment
 # Default to latest OpenAI models if not set
 BIG_MODEL = os.environ.get("BIG_MODEL", "gpt-4.1")
@@ -1161,13 +1167,11 @@ async def create_message(
         if request.model.startswith("openai/"):
             # Friendli uses OpenAI-compatible API
             if PREFERRED_PROVIDER == "friendli":
-                # Remove openai/ prefix and use raw model name for Friendli
-                friendli_model = request.model[7:]  # Remove "openai/" prefix
-                litellm_request["model"] = friendli_model
+                # For Friendli, use openai/ prefix with custom api_key and api_base
+                # litellm will use these credentials instead of OPENAI_API_KEY env var
                 litellm_request["api_key"] = FRIENDLI_TOKEN
                 litellm_request["api_base"] = FRIENDLI_BASE_URL
-                litellm_request["custom_llm_provider"] = "openai"
-                logger.debug(f"Using Friendli API for model: {friendli_model}")
+                logger.debug(f"Using Friendli API for model: {request.model}, base: {FRIENDLI_BASE_URL}")
             else:
                 litellm_request["api_key"] = OPENAI_API_KEY
                 # Use custom OpenAI base URL if configured
