@@ -81,6 +81,7 @@ app = FastAPI()
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+FRIENDLI_TOKEN = os.environ.get("FRIENDLI_TOKEN")
 
 # Get Vertex AI project and location from environment (if set)
 VERTEX_PROJECT = os.environ.get("VERTEX_PROJECT", "unset")
@@ -120,6 +121,12 @@ OPENAI_MODELS = [
 GEMINI_MODELS = [
     "gemini-2.5-flash",
     "gemini-2.5-pro"
+]
+
+# List of Friendli models
+FRIENDLI_MODELS = [
+    "zai-org/GLM-4.7",
+    "MiniMaxAI/MiniMax-M2.1",
 ]
 
 # Helper function to clean schema for Gemini
@@ -220,6 +227,18 @@ class MessagesRequest(BaseModel):
             new_model = f"anthropic/{clean_v}"
             mapped = True
 
+        # Friendli provider: use openai/ prefix with Friendli base URL
+        elif PREFERRED_PROVIDER == "friendli":
+            if 'haiku' in clean_v.lower():
+                new_model = f"openai/{SMALL_MODEL}"
+                mapped = True
+            elif 'sonnet' in clean_v.lower() or 'opus' in clean_v.lower():
+                new_model = f"openai/{BIG_MODEL}"
+                mapped = True
+            else:
+                new_model = f"openai/{clean_v}"
+                mapped = True
+
         # Map Haiku to SMALL_MODEL based on provider preference
         elif 'haiku' in clean_v.lower():
             if PREFERRED_PROVIDER == "google" and SMALL_MODEL in GEMINI_MODELS:
@@ -293,8 +312,21 @@ class TokenCountRequest(BaseModel):
 
         # --- Mapping Logic --- START ---
         mapped = False
+
+        # Friendli provider: use openai/ prefix with Friendli base URL
+        if PREFERRED_PROVIDER == "friendli":
+            if 'haiku' in clean_v.lower():
+                new_model = f"openai/{SMALL_MODEL}"
+                mapped = True
+            elif 'sonnet' in clean_v.lower() or 'opus' in clean_v.lower():
+                new_model = f"openai/{BIG_MODEL}"
+                mapped = True
+            else:
+                new_model = f"openai/{clean_v}"
+                mapped = True
+
         # Map Haiku to SMALL_MODEL based on provider preference
-        if 'haiku' in clean_v.lower():
+        elif 'haiku' in clean_v.lower():
             if PREFERRED_PROVIDER == "google" and SMALL_MODEL in GEMINI_MODELS:
                 new_model = f"gemini/{SMALL_MODEL}"
                 mapped = True
@@ -1124,13 +1156,23 @@ async def create_message(
         
         # Determine which API key to use based on the model
         if request.model.startswith("openai/"):
-            litellm_request["api_key"] = OPENAI_API_KEY
-            # Use custom OpenAI base URL if configured
-            if OPENAI_BASE_URL:
-                litellm_request["api_base"] = OPENAI_BASE_URL
-                logger.debug(f"Using OpenAI API key and custom base URL {OPENAI_BASE_URL} for model: {request.model}")
+            # Friendli uses OpenAI-compatible API
+            if PREFERRED_PROVIDER == "friendli":
+                # Remove openai/ prefix and use raw model name for Friendli
+                friendli_model = request.model[7:]  # Remove "openai/" prefix
+                litellm_request["model"] = friendli_model
+                litellm_request["api_key"] = FRIENDLI_TOKEN
+                litellm_request["api_base"] = "https://api.friendli.ai/serverless/v1"
+                litellm_request["custom_llm_provider"] = "openai"
+                logger.warning(f"Using Friendli API for model: {friendli_model}")
             else:
-                logger.debug(f"Using OpenAI API key for model: {request.model}")
+                litellm_request["api_key"] = OPENAI_API_KEY
+                # Use custom OpenAI base URL if configured
+                if OPENAI_BASE_URL:
+                    litellm_request["api_base"] = OPENAI_BASE_URL
+                    logger.debug(f"Using OpenAI API key and custom base URL {OPENAI_BASE_URL} for model: {request.model}")
+                else:
+                    logger.debug(f"Using OpenAI API key for model: {request.model}")
         elif request.model.startswith("gemini/"):
             if USE_VERTEX_AUTH:
                 litellm_request["vertex_project"] = VERTEX_PROJECT
