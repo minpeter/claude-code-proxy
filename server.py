@@ -93,6 +93,9 @@ USE_VERTEX_AUTH = os.environ.get("USE_VERTEX_AUTH", "False").lower() == "true"
 # Get OpenAI base URL from environment (if set)
 OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL")
 
+# Get Friendli base URL from environment (if set)
+FRIENDLI_BASE_URL = os.environ.get("FRIENDLI_BASE_URL", "https://api.friendli.ai/serverless/v1")
+
 # Get preferred provider (default to openai)
 PREFERRED_PROVIDER = os.environ.get("PREFERRED_PROVIDER", "openai").lower()
 
@@ -1162,9 +1165,9 @@ async def create_message(
                 friendli_model = request.model[7:]  # Remove "openai/" prefix
                 litellm_request["model"] = friendli_model
                 litellm_request["api_key"] = FRIENDLI_TOKEN
-                litellm_request["api_base"] = "https://api.friendli.ai/serverless/v1"
+                litellm_request["api_base"] = FRIENDLI_BASE_URL
                 litellm_request["custom_llm_provider"] = "openai"
-                logger.warning(f"Using Friendli API for model: {friendli_model}")
+                logger.debug(f"Using Friendli API for model: {friendli_model}")
             else:
                 litellm_request["api_key"] = OPENAI_API_KEY
                 # Use custom OpenAI base URL if configured
@@ -1186,8 +1189,9 @@ async def create_message(
             litellm_request["api_key"] = ANTHROPIC_API_KEY
             logger.debug(f"Using Anthropic API key for model: {request.model}")
         
-        # For OpenAI models - modify request format to work with limitations
-        if "openai" in litellm_request["model"] and "messages" in litellm_request:
+        # For OpenAI-compatible models (OpenAI and Friendli) - modify request format to work with limitations
+        is_openai_compatible = "openai" in litellm_request["model"] or PREFERRED_PROVIDER == "friendli"
+        if is_openai_compatible and "messages" in litellm_request:
             logger.debug(f"Processing OpenAI model request: {litellm_request['model']}")
             
             # For OpenAI models, we need to convert content blocks to simple strings
