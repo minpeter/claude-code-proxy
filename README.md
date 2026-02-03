@@ -1,8 +1,8 @@
-# Anthropic API Proxy for Gemini & OpenAI Models 🔄
+# Anthropic API Proxy for Gemini, OpenAI & Friendli Models 🔄
 
-**Use Anthropic clients (like Claude Code) with Gemini, OpenAI, or direct Anthropic backends.** 🤝
+**Use Anthropic clients (like Claude Code) with Gemini, OpenAI, Friendli, or direct Anthropic backends.** 🤝
 
-A proxy server that lets you use Anthropic clients with Gemini, OpenAI, or Anthropic models themselves (a transparent proxy of sorts), all via LiteLLM. 🌉
+A proxy server that lets you use Anthropic clients with Gemini, OpenAI, Friendli, or Anthropic models themselves (a transparent proxy of sorts), all via LiteLLM. 🌉
 
 
 ![Anthropic API Proxy](pic.png)
@@ -14,6 +14,7 @@ A proxy server that lets you use Anthropic clients with Gemini, OpenAI, or Anthr
 - OpenAI API key 🔑
 - Google AI Studio (Gemini) API key (if using Google provider) 🔑
 - Google Cloud Project with Vertex AI API enabled (if using Application Default Credentials for Gemini) ☁️
+- Friendli API token (if using Friendli provider) 🔑
 - [uv](https://github.com/astral-sh/uv) installed.
 
 ### Setup 🛠️
@@ -42,17 +43,19 @@ A proxy server that lets you use Anthropic clients with Gemini, OpenAI, or Anthr
    *   `ANTHROPIC_API_KEY`: (Optional) Needed only if proxying *to* Anthropic models.
    *   `OPENAI_API_KEY`: Your OpenAI API key (Required if using the default OpenAI preference or as fallback).
    *   `GEMINI_API_KEY`: Your Google AI Studio (Gemini) API key (Required if `PREFERRED_PROVIDER=google` and `USE_VERTEX_AUTH=true`).
+   *   `FRIENDLI_TOKEN`: Your Friendli API token (Required if `PREFERRED_PROVIDER=friendli`).
    *   `USE_VERTEX_AUTH` (Optional): Set to `true` to use Application Default Credentials (ADC) will be used (no static API key required). Note: when USE_VERTEX_AUTH=true, you must configure `VERTEX_PROJECT` and `VERTEX_LOCATION`.
    *   `VERTEX_PROJECT` (Optional): Your Google Cloud Project ID (Required if `PREFERRED_PROVIDER=google` and `USE_VERTEX_AUTH=true`).
    *   `VERTEX_LOCATION` (Optional): The Google Cloud region for Vertex AI (e.g., `us-central1`) (Required if `PREFERRED_PROVIDER=google` and `USE_VERTEX_AUTH=true`).
-   *   `PREFERRED_PROVIDER` (Optional): Set to `openai` (default), `google`, or `anthropic`. This determines the primary backend for mapping `haiku`/`sonnet`.
-   *   `BIG_MODEL` (Optional): The model to map `sonnet` requests to. Defaults to `gpt-4.1` (if `PREFERRED_PROVIDER=openai`) or `gemini-2.5-pro-preview-03-25`. Ignored when `PREFERRED_PROVIDER=anthropic`.
+   *   `PREFERRED_PROVIDER` (Optional): Set to `openai` (default), `google`, `anthropic`, or `friendli`. This determines the primary backend for mapping `haiku`/`sonnet`/`opus`.
+   *   `BIG_MODEL` (Optional): The model to map `sonnet`/`opus` requests to. Defaults to `gpt-4.1` (if `PREFERRED_PROVIDER=openai`) or `gemini-2.5-pro-preview-03-25`. Ignored when `PREFERRED_PROVIDER=anthropic`.
    *   `SMALL_MODEL` (Optional): The model to map `haiku` requests to. Defaults to `gpt-4.1-mini` (if `PREFERRED_PROVIDER=openai`) or `gemini-2.0-flash`. Ignored when `PREFERRED_PROVIDER=anthropic`.
 
    **Mapping Logic:**
    - If `PREFERRED_PROVIDER=openai` (default), `haiku`/`sonnet` map to `SMALL_MODEL`/`BIG_MODEL` prefixed with `openai/`.
    - If `PREFERRED_PROVIDER=google`, `haiku`/`sonnet` map to `SMALL_MODEL`/`BIG_MODEL` prefixed with `gemini/` *if* those models are in the server's known `GEMINI_MODELS` list (otherwise falls back to OpenAI mapping).
    - If `PREFERRED_PROVIDER=anthropic`, `haiku`/`sonnet` requests are passed directly to Anthropic with the `anthropic/` prefix without remapping to different models.
+   - If `PREFERRED_PROVIDER=friendli`, `haiku`/`sonnet`/`opus` map to `SMALL_MODEL`/`BIG_MODEL` using Friendli's OpenAI-compatible API endpoint.
 
 4. **Run the server**:
    ```bash
@@ -101,12 +104,13 @@ docker run -d --env-file .env -p 8082:8082 ghcr.io/1rgs/claude-code-proxy:latest
 
 ## Model Mapping 🗺️
 
-The proxy automatically maps Claude models to either OpenAI or Gemini models based on the configured model:
+The proxy automatically maps Claude models to either OpenAI, Gemini, or Friendli models based on the configured provider:
 
-| Claude Model | Default Mapping | When BIG_MODEL/SMALL_MODEL is a Gemini model |
-|--------------|--------------|---------------------------|
-| haiku | openai/gpt-4o-mini | gemini/[model-name] |
-| sonnet | openai/gpt-4o | gemini/[model-name] |
+| Claude Model | Default (OpenAI) | Google Provider | Friendli Provider |
+|--------------|------------------|-----------------|-------------------|
+| haiku | openai/gpt-4.1-mini | gemini/[SMALL_MODEL] | [SMALL_MODEL] via Friendli |
+| sonnet | openai/gpt-4.1 | gemini/[BIG_MODEL] | [BIG_MODEL] via Friendli |
+| opus | openai/gpt-4.1 | gemini/[BIG_MODEL] | [BIG_MODEL] via Friendli |
 
 ### Supported Models
 
@@ -129,6 +133,11 @@ The following OpenAI models are supported with automatic `openai/` prefix handli
 The following Gemini models are supported with automatic `gemini/` prefix handling:
 - gemini-2.5-pro
 - gemini-2.5-flash
+
+#### Friendli Models
+The following Friendli models are supported via OpenAI-compatible API:
+- zai-org/GLM-4.7
+- MiniMaxAI/MiniMax-M2.1
 
 ### Model Prefix Handling
 The proxy automatically adds the appropriate prefix to model names:
@@ -193,6 +202,16 @@ PREFERRED_PROVIDER="openai"
 BIG_MODEL="gpt-4o" # Example specific model
 SMALL_MODEL="gpt-4o-mini" # Example specific model
 ```
+
+**Example 5: Use Friendli Provider (GLM-4.7 & MiniMax)**
+```dotenv
+FRIENDLI_TOKEN="your-friendli-token"
+PREFERRED_PROVIDER="friendli"
+BIG_MODEL="zai-org/GLM-4.7"
+SMALL_MODEL="MiniMaxAI/MiniMax-M2.1"
+```
+
+*Use case: Friendli provides access to various open-source models like GLM-4.7 and MiniMax-M2.1 via an OpenAI-compatible API. This allows you to use powerful open-source models with Claude Code.*
 
 ## How It Works 🧩
 
